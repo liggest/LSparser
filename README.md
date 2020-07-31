@@ -14,6 +14,10 @@
     s2: "s2val"
     l: ["lval1", "lval2", "lval3"]
 ```
+### 安装
+```
+    pip install LSparser
+```
 
 ### 指令格式
 - type/指令前缀：一个字符，用于分辩文本是否为指令

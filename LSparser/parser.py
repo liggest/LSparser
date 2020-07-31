@@ -84,13 +84,15 @@ class CommandParser():
         self.cmdobj.opt(names,hasValue)
         return self
 
-    def getCommand(self,t):
+    def getCommand(self,t,prefix=commandPrefix):
         """
-            判断指定文本是否为指令，并更新当前解析状态
+            判断指定文本是否为指令，并更新当前解析状态\n
+                t 文本\n
+                prefix 用于判定文本是否为指令的指令前缀
         """
         if t=="":
             return False
-        r=isMatchPrefix(t) #如果r为True，则至少被识别为一个指令
+        r=isMatchPrefix(t,prefix) #如果r为True，则至少被识别为一个指令
         if r:
             self.cons=t.strip().split()
             self.command["type"]=self.cons[0][0]
@@ -132,20 +134,20 @@ class CommandParser():
             self.command["params"]=con
             return
         while len(con)!=0:
-            if not con[0].startswith(Option.shortPrefix):
+            if not con[0].startswith(Option.shortPrefix): # Option.shortPrefix="-"
                 self.command["params"].append(con[0])
                 con=con[1:]
             else:
                 matched=False
-                if con[0].startswith(Option.longPrefix):
+                if con[0].startswith(Option.longPrefix): # Option.longPrefix="--"
                     tarOpt=self.cmdobj.longOpts.get(con[0],None)
                     if tarOpt:
                         matched=True
-                        optText=con[0].lstrip("-")
+                        optText=con[0].lstrip(Option.shortPrefix)
                         con=con[1:]
                         if tarOpt.hasValue>0:
                             self.command[optText]=[]
-                            while len(con)!=0 and not con[0].startswith("-"):
+                            while len(con)!=0 and not con[0].startswith(Option.shortPrefix):
                                 self.command[optText].append(con[0])
                                 con=con[1:]
                             if tarOpt.hasValue==2 and len(self.command[optText])==0:
@@ -156,9 +158,9 @@ class CommandParser():
                     tarOpt=self.cmdobj.shortOpts.get(con[0],None)
                     if tarOpt:
                         matched=True
-                        optText=con[0].lstrip("-")
+                        optText=con[0].lstrip(Option.shortPrefix)
                         con=con[1:]
-                        if tarOpt.hasValue==0 or len(con)==0 or (tarOpt.hasValue==2 and con[0].startswith("-") ):
+                        if tarOpt.hasValue==0 or len(con)==0 or (tarOpt.hasValue==2 and con[0].startswith(Option.shortPrefix) ):
                             self.command[optText]=True
                         else:
                             self.command[optText]=con[0]
@@ -167,14 +169,16 @@ class CommandParser():
                     self.command["params"].append(con[0])
                     con=con[1:]
 
-    def tryParse(self,t):
+    def tryParse(self,t,prefix=commandPrefix):
         """
             尝试解析给定文本\n
             如果是在指令模板中定义过的指令，则直接解析、调用回调函数、以列表的形式返回各个函数运行结果\n
-            如果 没有为指令模板附加回调函数 或 指令没在指令模板中定义过 或 根本不是指令，则返回None
+            如果 没有为指令模板附加回调函数 或 指令没在指令模板中定义过 或 根本不是指令，则返回None\n
+                t 文本\n
+                prefix 用于判定文本是否为指令的指令前缀
         """
         result=None
-        r=self.getCommand(t)
+        r=self.getCommand(t,prefix)
         if r and self.state==CommandState.DefinedCommand:
             self.parse()
             if len(self.cmdobj.callbacklist)!=0:

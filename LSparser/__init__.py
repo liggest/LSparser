@@ -4,6 +4,6 @@
     使用parser.CommandParser类创建对象，根据情况调用tryParse或parse解析指令
 """
 
-from .command import Command,cmdCallback,commandPrefix
-from .parser import CommandParser
+from .command import Command,CommandParser,OPT,ParseResult
+from .event import Events
 #这样就可以 from LSParser import *

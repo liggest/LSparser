@@ -1,4 +1,6 @@
 # LSparser
+[![pypi_badge](https://img.shields.io/pypi/v/LSparser?color=blue)](https://pypi.org/project/LSparser/)
+
 一个基于Python的指令解析器（大概）
 
 解析一定格式的指令，形如：

@@ -186,48 +186,49 @@ class EventManager:
 
 if __name__ == "__main__":
 
-    class CallableName:
-        def __init__(self,name):
-            self.name=name
-        def __call__(self):
-            print(self)
-        def __str__(self):
-            return self.name
-        __repr__=__str__
-    Name=CallableName
+    # class CallableName:
+    #     def __init__(self,name):
+    #         self.name=name
+    #     def __call__(self):
+    #         print(self)
+    #     def __str__(self):
+    #         return self.name
+    #     __repr__=__str__
+    # Name=CallableName
 
-    A=Name("A");B=Name("B");C=Name("C");D=Name("D")
-    E=Name("E");F=Name("F");G=Name("G");H=Name("H")
-    I=Name("I");J=Name("J");K=Name("K");L=Name("L")
-    M=Name("M");N=Name("N");O=Name("O");P=Name("P")
-    Q=Name("Q");R=Name("R");S=Name("S");T=Name("T")
-    U=Name("U");V=Name("V");W=Name("W");X=Name("X")
-    Y=Name("Y");Z=Name("Z")
+    # A=Name("A");B=Name("B");C=Name("C");D=Name("D")
+    # E=Name("E");F=Name("F");G=Name("G");H=Name("H")
+    # I=Name("I");J=Name("J");K=Name("K");L=Name("L")
+    # M=Name("M");N=Name("N");O=Name("O");P=Name("P")
+    # Q=Name("Q");R=Name("R");S=Name("S");T=Name("T")
+    # U=Name("U");V=Name("V");W=Name("W");X=Name("X")
+    # Y=Name("Y");Z=Name("Z")
 
-    a=EventLists([A,B,C])
-    a.addSub("def",D,E,F)
-    print(a)
-    a+=[G,H,I]
-    print(a)
-    a.sendSub("h")
-    a.sendSub("def")
-    a.removeSub("def",E)
-    print(a)
+    # a=EventLists([A,B,C])
+    # a.addSub("def",D,E,F)
+    # print(a)
+    # a+=[G,H,I]
+    # print(a)
+    # a.sendSub("h")
+    # a.sendSub("def")
+    # a.removeSub("def",E)
+    # print(a)
 
-    em=EventManager()
-    em.addSub("b","jkl",J,K,L)
-    print(em.events["b"])
-    a.addSub("jkl",M)
-    print(a)
-    em.events["b"].merge(a)
-    print(em.events["b"])
-    em.removeSubAll("b","def")
-    print(em.events["b"])
+    # em=EventManager()
+    # em.addSub("b","jkl",J,K,L)
+    # print(em.events["b"])
+    # a.addSub("jkl",M)
+    # print(a)
+    # em.events["b"].merge(a)
+    # print(em.events["b"])
+    # em.removeSubAll("b","def")
+    # print(em.events["b"])
 
-    c=EventLists()
-    print(c)
-    c.addSub("n",N)
-    print(bool(c))
+    # c=EventLists()
+    # print(c)
+    # c.addSub("n",N)
+    # print(bool(c))
+    pass
 
 
             

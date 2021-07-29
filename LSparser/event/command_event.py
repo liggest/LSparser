@@ -14,7 +14,7 @@ class CommandEvents:
 
     Error="error" # error子事件（报错回调）的名称
 
-    def __init__(self,name,core):
+    def __init__(self,name,core:CommandCore):
         """
             name 为指令名\n
             core 为指令所在的中枢对象

@@ -5,6 +5,8 @@
 """
 
 from .__version__ import __version__
-from .command import Command,CommandParser,OPT,ParseResult
+from .command import Command,OPT,CommandParser,ParseResult,CommandCore
 from .event import Events
+# Parser=CommandParser
+# Core=CommandCore
 #这样就可以 from LSParser import *

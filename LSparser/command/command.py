@@ -38,16 +38,18 @@ class BaseCommand:
     """
         指令模板基类，包含一些指令模板的基本逻辑
     """
-    def __init__(self,name,types=None,coreName=None):
+    def __init__(self,name,types:list=None,coreName=None):
         core=CommandCore.getCore(coreName)
+        self.core=core
         if types is None:
-            types=core.commandPrefix
-        if core.isMatchPrefix(name):
+            types=self.core.commandPrefix #使用中枢的默认前缀
+        if self.core.isMatchPrefix(name):
             self.name=name[1:]
             self.typelist=[name[0]]
         else:
             self.name=name
-            self.typelist=types
+            self.typelist=[]
+            self.types(*types) #用 types 方法能更新中枢的潜在前缀
         if not self.name:
             raise ValueError("指令名不能为空")
         self.nameset=set()
@@ -55,7 +57,6 @@ class BaseCommand:
         self.Optset=set()
         self.longOpts={}
         self.shortOpts={}
-        self.core=core
 
     def __str__(self):
         return f"Command - {self.name}\nOpts - {self.Optset}"
@@ -67,11 +68,14 @@ class BaseCommand:
                 OptType.Long：长
         """
         if optType==OptType.Short:
-            self.shortOpts[name]=opt
+            opts=self.shortOpts
         elif optType==OptType.Long:
-            self.longOpts[name]=opt
+            opts=self.longOpts
         else:
-            raise ValueError("错误的optType")
+            raise ValueError(f"{self.name} 指令的 {name} 选项的选项类型有误")
+        if name in opts:
+            raise ValueError(f"{self.name} 指令的 {name} 选项已存在")
+        opts[name]=opt
 
     def types(self,*types):
         """
@@ -81,6 +85,7 @@ class BaseCommand:
         if self.typelist is self.core.commandPrefix:
             self.typelist=self.core.commandPrefix.copy()
         self.typelist+=types
+        self.core.potentialPrefix.update(*types)
         return self
     
     def names(self,*names):

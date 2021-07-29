@@ -37,8 +37,10 @@ def test_basic():
         assert c.longOpts["--l"] in c.Optset
         c=Command("!solo")
         assert len(c.typelist)==1 and "!" in c.typelist
-        c=Command("multi",types=["。","/"])
-        assert len(c.typelist)==2 and "。" in c.typelist and "/" in c.typelist
+        assert not core.isMatchPrefix("$multi")
+        c=Command("multi",types=["。","$"])
+        assert len(c.typelist)==2 and "。" in c.typelist and "$" in c.typelist
+        assert core.isMatchPrefix("$multi")
 
 def test_opt():
     with CommandCore("main"):
@@ -60,7 +62,7 @@ def test_event():
             return "success"
         Command("test").onExecute(p)
         pr=cp.tryParse(".test")
-        assert pr.isParsed()
+        assert pr.isChecked()
         assert pr.isCommand()
         assert pr.isDefinedCommand()
         assert not pr.isWrongType()
@@ -172,11 +174,17 @@ def test_parse():
         assert cp.tryParse(".shortM -s abc -s cde fg -s h").args["s"] == "h" #后面的覆盖前面的
         pr=cp.tryParse(".shortM -s -t")
         assert pr.args["s"] == "-t" and not pr.args.get("t") #-s必须有值
+        assert pr.getByType("s") == "-t"
         assert cp.tryParse(".shortM -t -s").args["t"]
         Command("shortT").opt("-s",OPT.Try).opt("-t")
         assert cp.tryParse(".shortT -s").args["s"] #只有选项，没提供值，故为True
         pr=cp.tryParse(".shortT -s -t")
         assert pr.args["s"] is True and pr.args["t"] is True #因为有-t 故 -s 放弃值，只为True
+        assert pr.getByType("s",T=bool) is True
+        assert pr.getByType("t","Not str!") == "Not str!"
+        assert pr.getByType("NO","NO!!!") == "NO!!!"
+        assert pr.splitHead("sho") == "rtT"
+        assert pr.splitHead("ssh") == ""
         Command("longN").opt("--s",OPT.Not)
         assert not cp.tryParse(".longN -s").args
         assert cp.tryParse(".longN --s").args["s"] is True
@@ -191,5 +199,58 @@ def test_parse():
         assert cp.tryParse(".longT --s a b c").args["s"] == ["a","b","c"]
         assert cp.tryParse(".longT --s -t c").args["s"] is True #被 -t 挡住的时候会是True
 
+def test_parse_events():
+    with CommandCore("main") as core:
+        cp=CommandParser()
 
+        beforeTimes=0
+        afterTimes=0
+        @Events.onBeforeParse
+        def before(pr:ParseResult,cp:CommandParser):
+            nonlocal beforeTimes
+            pr.data["brain"]="void"
+            assert pr.parser==cp
+            assert pr.isChecked()
+            beforeTimes+=1
 
+        @Events.onAfterParse
+        def after(pr:ParseResult,cp:CommandParser):
+            nonlocal afterTimes
+            assert pr.data["brain"]=="void"
+            assert pr.parser==cp
+            afterTimes+=1
+
+        @Events.onNotCmd()
+        def notCmd(pr:ParseResult,cp:CommandParser):
+            assert not pr.raw or pr.raw=="hh" or (not pr.command and pr.type=="。")
+
+        @Events.onUndefinedCmd("main")
+        def undefined(pr:ParseResult,cp:CommandParser):
+            assert pr.command=="nono"
+            pr.opt("-s").opt("--l",OPT.M).opt("-c",OPT.T).parse()
+            assert pr["s"] is True
+            assert pr["l"]==["yes","yes"]
+            assert pr["c"]=="wow"
+            assert pr.paramStr=="!"
+
+        @Events.onWrongCmdType
+        def wrong(pr:ParseResult,cp:CommandParser):
+            assert pr.command=="uno"
+            assert pr.type=="!"
+            assert not "s" in pr
+            pr.type="$"
+            pr.parse()
+            assert pr["s"]=="uno!"
+        
+        Command("cmd").opt("-s").opt("-c",OPT.M)
+        Command("uno",types=["$","#"]).opt("-s",OPT.M)
+
+        cp.tryParse("hh")
+        cp.tryParse("")
+        cp.tryParse("。")
+
+        cp.tryParse(".cmd -s -c md")
+        cp.tryParse(".nono -s --l yes yes -c wow !")
+        cp.tryParse("!uno -s uno!")
+        assert beforeTimes==6
+        assert afterTimes==6

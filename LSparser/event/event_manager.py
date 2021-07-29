@@ -47,7 +47,7 @@ class EventLists(list):
         if subList:
             subList+=callbacks
         else:
-            subList=callbacks
+            subList=[*callbacks]
         setattr(self,name,subList)
 
     def sendSub(self,name,*args,**kw):
@@ -101,7 +101,7 @@ class EventManager:
         if callList:
             callList+=callbacks
         else:
-            callList=callbacks # EventLists(callbacks)
+            callList=[*callbacks] # EventLists(callbacks)
         self.events[name]=callList
     
     def send(self,name,*args,**kw):

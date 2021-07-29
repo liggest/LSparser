@@ -20,7 +20,7 @@ class ParseResult:
         指令解析结果
     """
 
-    def __init__(self):
+    def __init__(self,parser:"CommandParser"=None):
         self.command=""
         self.type=""
         self.params=[]
@@ -31,6 +31,10 @@ class ParseResult:
         self._cmd:BaseCommand=None
         self.output=[]
         self.data={} #用来携带一些额外的数据
+        self.parser=parser
+
+    def __contains__(self,key):
+        return key in self.args
 
     def __getitem__(self,key):
         return self.args.get(key) #访问args的简易写法
@@ -58,9 +62,9 @@ class ParseResult:
             return len(self._cmd.Optset)!=0
         return False
 
-    def isParsed(self):
+    def isChecked(self):
         """
-            指令是否已被解析
+            指令是否已被初步检查（确定是否为指令、指令类型等）
         """
         return self.state != CommandState.Unknown
 
@@ -101,11 +105,11 @@ class ParseResult:
     def getByType(self,arg,default=None,T=str):
         """
             得到解析后的指定选项，附加类型限制\n
-                arg 选项的名称，不带选项前缀（如"-"）\n
+                arg 选项的名称，不带选项前缀\n
                 default 默认值，如果没得到选项则使用该值 默认为None\n
                 T 要获得的类型，如果存在选项但不是指定类型的，也只返回默认值 默认为str
         """
-        r=self.command.get(arg,default)
+        r=self.args.get(arg,default)
         if isinstance(r,T):
             return r
         return default
@@ -126,6 +130,15 @@ class ParseResult:
         self._cmd.opt(names,hasValue)
         return self
 
+    def parse(self):
+        """
+            让解析器解析指令\n
+            需要在为指令添加好所有选项后调用\n
+        """
+        if self.parser:
+            return self.parser.parse(self)
+        raise ValueError("没找到解析器！可能本解析结果不是通过解析器产生的…")
+
 class CommandParser:
     '''
         指令解析类\n
@@ -133,7 +146,7 @@ class CommandParser:
         基本一个CommandParser对象只用来解析一行文本
     '''
     def __init__(self,coreName=None):
-        self.result=ParseResult()
+        self.result=ParseResult(parser=self)
         self.core=CommandCore.getCore(coreName)
         self.core.tryRefresh() #如果都要解析了，core还需要刷新，那就刷新一下
 
@@ -150,7 +163,8 @@ class CommandParser:
             判断指定文本是否为指令，并更新当前解析状态\n
                 t 文本\n
         """
-        result=ParseResult()
+        result=ParseResult(parser=self)
+        result.raw=t
         if t=="":
             result.state=CommandState.NotCommand
             self.result=result
@@ -159,28 +173,30 @@ class CommandParser:
             result._cons=t.strip().split()
             result.type=result._cons[0][0]
             result.command=result._cons[0][1:]
-            result.raw=t
-            if result.command=="":
+            if result.command=="": #不允许空指令
                 result.state=CommandState.NotCommand
                 self.result=result
                 return result
             result.state=CommandState.Command
             cmd:BaseCommand=self.core.cmds.get(result.command)
             
-            if cmd:
+            if cmd: #定义的指令
                 result._cmd=cmd
                 result.state=CommandState.DefinedCommand
                 if not result.type in cmd.typelist:
                     result.state=CommandState.WrongType
-            else:
+            else: #未定义指令，给它一个临时的模板
                 result._cmd=BaseCommand(result._cons[0],coreName=self.core.name)
+        else: #不是一个指令
+            result.state=CommandState.NotCommand
         self.result=result
         return result
     
     def parse(self,pr:ParseResult=None):
         """
             解析指令\n
-            需要在为指令添加好所有选项后调用
+            需要在为指令添加好所有选项后调用\n
+                pr 供解析用的 ParseResult 对象，默认为 None，使用最后一次经解析器处理过的对象
         """
         if pr is None:
             pr=self.result
@@ -247,6 +263,7 @@ class CommandParser:
                 t 文本\n
         """
         pr=self.getCommand(t)
+        self.core.EM.send(EventNames.BeforeParse,pr,self)
         if pr and pr.state==CommandState.DefinedCommand:
             pr=self.parse(pr)
             try:
@@ -255,6 +272,7 @@ class CommandParser:
                 pr.output=pr._cmd.events.sendError(pr,err)
         else:
             self.sendEvents(pr)
+        self.core.EM.send(EventNames.AfterParse,pr,self)
         return pr
 
     def sendEvents(self,result:ParseResult):

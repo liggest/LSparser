@@ -80,7 +80,8 @@ class CommandCore:
         self.name=name
         self.oldLast=CommandCore.last
 
-        self.commandPrefix=list(CommandCore.defaultPrefix)
+        self.commandPrefix=[*CommandCore.defaultPrefix] #作为中枢内指令的默认前缀
+        self.potentialPrefix=set(self.commandPrefix)  #作为中枢内指令可能拥有的潜在前缀，一般认为其包含 commandPrefix
 
         CommandCore.addCore(self,name)
 
@@ -133,7 +134,8 @@ class CommandCore:
         temp=text.lstrip()
         if temp=="":
             return False
-        return temp[0] in self.commandPrefix
+        # return temp[0] in self.commandPrefix
+        return temp[0] in self.potentialPrefix # 只要命中潜在前缀，都算作是指令
 
 
     def getCmdSimilarity(self,text,top=-1,getScore=False,scoreFunc=editSimilarity):

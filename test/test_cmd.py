@@ -254,3 +254,36 @@ def test_parse_events():
         cp.tryParse("!uno -s uno!")
         assert beforeTimes==6
         assert afterTimes==6
+
+def test_data():
+    class StringContaier:
+        extra="more than a string!"
+
+        def __init__(self,s):
+            self.s=s
+
+        def __str__(self) -> str:
+            return self.s
+
+    with CommandCore("main"):
+        cp=CommandParser()
+        cp.data["one"]="shot"
+        Command("cmd")
+        cp.tryParse( StringContaier(".cmd dmc") )
+
+        @Events.onBeforeParse
+        def before(pr:ParseResult, cp:CommandParser):
+            assert pr.data["one"]=="shot"
+            assert not "two" in pr.data
+        
+        @Events.onCmd("cmd")
+        def cmd(pr:ParseResult):
+            assert pr.raw.extra=="more than a string!"
+            pr.data["two"]="kick"
+        
+        @Events.onAfterParse
+        def after(pr:ParseResult, cp:CommandParser):
+            assert pr.data["one"]=="shot"
+            assert pr.data["two"]=="kick"
+
+

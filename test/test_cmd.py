@@ -122,6 +122,14 @@ def test_event():
         assert len(pr.output)==1
         assert isinstance(pr.output[0],IndexError)
 
+        @Events.onCmd("no-error")
+        def _(result):
+            return [][5]
+        
+        c=Command("no-error")
+        with pytest.raises(IndexError):
+            pr=cp.tryParse("!no-error")
+
         @Events.onCmd.error("before")
         def beforeError(result):
             return result.command
@@ -241,7 +249,7 @@ def test_parse_events():
             pr.type="$"
             pr.parse()
             assert pr["s"]=="uno!"
-        
+
         Command("cmd").opt("-s").opt("-c",OPT.M)
         Command("uno",types=["$","#"]).opt("-s",OPT.M)
 
@@ -254,6 +262,37 @@ def test_parse_events():
         cp.tryParse("!uno -s uno!")
         assert beforeTimes==6
         assert afterTimes==6
+
+        @Events.onExecuteError
+        def onError(pr:ParseResult, cp:CommandParser, err:Exception) -> bool:
+            assert isinstance(err,IndexError)
+        
+        @Events.onCmd("raise")
+        @Events.onCmd("error")
+        def error(pr:ParseResult):
+            [][863]
+        
+        Command("error")
+        with pytest.raises(IndexError):
+            cp.tryParse(".error")
+        
+        @Events.onCmd.error("error")
+        def errorError(pr:ParseResult,err:Exception):
+            assert isinstance(err,IndexError)
+        
+        assert cp.tryParse(".error").output==[None]
+
+        Command("raise")
+        with pytest.raises(IndexError):
+            cp.tryParse(".raise")
+
+        @Events.onExecuteError
+        def handleError(pr:ParseResult, cp:CommandParser, err:Exception) -> bool:
+            assert isinstance(err,IndexError)
+            return True
+        
+        assert cp.tryParse(".raise").output==[]
+        
 
 def test_data():
     class StringContaier:

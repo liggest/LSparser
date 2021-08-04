@@ -259,6 +259,8 @@ class Command(BaseCommand):
     def onExecute(self,*funcs):
         """
             为指令模板添加更多执行回调\n
+            返回值统一存入解析结果的 `output` 列表中\n
+            回调函数：`(result:ParseResult) -> Any`\n
             支持链式调用
         """
         self.events.onExecute(*funcs)
@@ -269,6 +271,8 @@ class Command(BaseCommand):
     def onError(self,*funcs):
         """
             为指令模板添加更多报错回调\n
+            返回值代替执行回调的结果存入解析结果的 `output` 列表中\n
+            回调函数：`(result:ParseResult, err:Exception) -> Any`\n
             支持链式调用
         """
         self.events.onError(*funcs)

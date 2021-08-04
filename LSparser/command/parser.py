@@ -314,6 +314,9 @@ class CommandParser:
                 pr.output=pr._cmd.events.sendExecute(pr)
             except Exception as err:
                 pr.output=pr._cmd.events.sendError(pr,err)
+                errorHandle=self.core.EM.send(EventNames.ExecuteError,pr,self,err)
+                if not pr.output and not any(errorHandle):
+                    raise err #没处理的话还是要抛出错误的
         else:
             self.sendEvents(pr)
         self.core.EM.send(EventNames.AfterParse,pr,self)

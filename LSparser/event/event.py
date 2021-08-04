@@ -13,11 +13,11 @@ class CommandEventsWrapper:
         例：
         ```python
             @Events.onCmd("cmd")
-            def cmdExecute(result:ParseResult):
+            def cmdExecute(result:ParseResult) -> Any:
                 pass
 
             @Events.onCmd.error("cmd")
-            def cmdError(result:ParseResult, err:Exception):
+            def cmdError(result:ParseResult, err:Exception) -> Any:
                 pass
         ```
     """
@@ -45,6 +45,7 @@ class CommandEventsWrapper:
     def execute(cls,cmdName,coreName=None):
         """
             为指令添加执行回调\n
+            返回值统一存入解析结果的 `output` 列表中\n
                 cmdName 指令名\n
                 coreName 指令中枢名，默认为 None，即是使用最后创建的中枢\n
             回调函数：`(result:ParseResult) -> Any`
@@ -55,6 +56,7 @@ class CommandEventsWrapper:
     def error(cls,cmdName,coreName=None):
         """
             为指令添加报错回调\n
+            返回值代替执行回调的结果存入解析结果的 `output` 列表中\n
                 cmdName 指令名\n
                 coreName 指令中枢名，默认为 None，即是使用最后创建的中枢\n
             回调函数：`(result:ParseResult, err:Exception) -> Any`
@@ -164,6 +166,17 @@ class Events:
             回调函数：`(result:ParseResult, parser:CommandParser) -> None`
         """
         return cls.on(EventNames.AfterParse,coreName)
+    
+    @classmethod
+    @_nameOrFunc
+    def onExecuteError(cls,coreName=None):
+        """
+            指令执行出错时的回调\n
+            若指令自身无报错回调，且此事件无回调返回 `True`，则继续抛出错误\n
+                coreName 指令中枢名，默认为 None，即是使用最后创建的中枢\n
+            回调函数：`(result:ParseResult, parser:CommandParser, error:Exception) -> bool`
+        """
+        return cls.on(EventNames.ExecuteError,coreName)
 
 cmdCallback=Events.onCmd
 
@@ -172,5 +185,6 @@ class EventNames:
     NotCmd="parser-NotCommand"
     UndefinedCmd="parser-UndefinedCmd"
     WrongCmdType="parser-WrongType"
+    ExecuteError="parser-ExecuteError"
     BeforeParse="parser-BeforeParse"
     AfterParse="parser-AfterParse"

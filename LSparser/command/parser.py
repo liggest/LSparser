@@ -30,8 +30,10 @@ class ParseResult:
         self._cons=[]
         self._cmd:BaseCommand=None
         self.output=[]
-        self.data={} #用来携带一些额外的数据
+        self._data=None #用来携带一些额外的数据
         self.parser=parser
+        if self.parser:
+            self._data=self.parser._data # 从 parser 中继承 _data 的引用
 
     def __contains__(self,key):
         return key in self.args
@@ -40,19 +42,29 @@ class ParseResult:
         return self.args.get(key) #访问args的简易写法
 
     def __str__(self):
-        result=self.raw+"\n"
+        result=f"{self.raw}\n"
         result+=f"type: {self.type or '未知'}\n"
         result+=f"command: {self.command or '未知'}\n"
         result+=f"params: {self.params}\n"
         if self.hasOpt:
             for k,v in self.args.items():
                 result+=f"{k}: {v}\n"
-        return result.strip() #基本输出的是command字典的内容，只不过格式漂亮一点
+        return result.strip() #基本输出的是 self 的内容，只不过格式漂亮一点
 
     __repr__=__str__
 
     def __bool__(self):
         return self.isCommand()
+
+    @property
+    def data(self):
+        if not self._data:
+            self._data={}
+        return self._data
+
+    @data.setter
+    def data(self,val):
+        self._data=val
 
     def hasOpt(self):
         """
@@ -114,6 +126,24 @@ class ParseResult:
             return r
         return default
 
+    def getToType(self,arg,default=None,T=str):
+        """
+            得到解析后的指定选项，附加类型限制\n
+                arg 选项的名称，不带选项前缀\n
+                default 默认值，如果没得到选项则使用该值 默认为None\n
+                T 要获得的类型，如果存在选项但不是指定类型的，则尝试转换，转换失败时返回默认值 默认为str
+        """
+        r=self.args.get(arg,default)
+        if isinstance(r,T):
+            return r
+        elif r:
+            try:
+                r=T(r)
+                return r
+            except:
+                pass
+        return default
+
     def splitHead(self,head):
         """
             若给定文本（head）在指令首部，则返回切除该文本后的字符串\n
@@ -143,13 +173,25 @@ class CommandParser:
     '''
         指令解析类\n
         例: .cmd param1 param2 -s1 -s2 s2val --l lval1 lval2 lval3\n
-        基本一个CommandParser对象只用来解析一行文本
     '''
     def __init__(self,coreName=None):
+        """
+            coreName 指令中枢名称，默认为 None，即最后创建的中枢\n
+        """
+        self._data=None
         self.result=ParseResult(parser=self)
         self.core=CommandCore.getCore(coreName)
         self.core.tryRefresh() #如果都要解析了，core还需要刷新，那就刷新一下
 
+    @property
+    def data(self):
+        if not self._data:
+            self._data={}
+        return self._data
+
+    @data.setter
+    def data(self,val):
+        self._data=val
 
     def opt(self,names,hasValue=OPT.Not):
         """
@@ -165,6 +207,8 @@ class CommandParser:
         """
         result=ParseResult(parser=self)
         result.raw=t
+        if not isinstance(t,str):
+            t=str(t)
         if t=="":
             result.state=CommandState.NotCommand
             self.result=result

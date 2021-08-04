@@ -2,8 +2,10 @@
     创建指令模板
 """
 
+from os import terminal_size
 from . import CommandCore
 from ..event import CommandEvents
+from ..util import indent
 
 from enum import IntEnum
 
@@ -122,7 +124,7 @@ class Command(BaseCommand):
         """
             name 指令名，诸如 .test 或 test\n
             types 指令前缀列表。可用前缀会根据name决定，或默认使用指令中枢中的前缀\n
-            coreName 要添加指令的CommandCore
+            coreName 要添加指令的指令中枢名称，默认为 None，即最后创建的中枢\n
         """
 
         super().__init__(name,types,coreName)
@@ -166,40 +168,95 @@ class Command(BaseCommand):
         """
             得到指令的完整帮助文本
         """
-        result=""
-        result+=self.typelist[0]+"/".join(self.nameset)+" "
-        for o in self.Optset:
-            result+="/".join(o.names)+" "
+        result=self.headHelp
         if self.showHelp:
-            result+="\n"
-            front="\n".join( ["  "+h for h in self.frontHelp.split("\n")] )
-            result+=f"{front}\n"
-            for o in self.Optset:
-                result+=f"  {str(o)}\n"
-            result+=f"{self.backHelp}\n"
-        return result[:-1]
+            # .cmd/.CMD
+            #   简介
+            #   详细介绍
+            #   -a 选项说明
+            #   -b/--b 选项说明
+            #   --c 选项说明
+            # 例：
+            #   例1
+            #   例2
+            #   ……
+            # front="\n".join([ f"  {h}" for h in self.frontHelp.split("\n") ])
+            front=indent(self.frontHelp)
+            result+=f"\n{front}"
+            if self.Optset:
+                # optHelp="\n".join([ f"  {str(o)}" for o in self.Optset ])
+                optHelp=indent(Option.sortOpts(*self.Optset),fn=str)
+                result+=f"\n{optHelp}"
+            if self.helpCase:
+                result+="\n例："
+                cases=indent(self.helpCase,fn=str)
+                # cases="\n".join([ f"  {c}" for c in self.helpCase ])
+                result+=f"\n{cases}"
+        else: # .cmd/.CMD -a -b/--b --c 
+            result+=" "
+            result+=" ".join([ "/".join(o.names) for o in self.Optset ])
+        return result.strip()
 
-    def help(self,front=None,back=None):
+    def help(self,short:str=None,detail:str=None,*cases):
         """
             为指令模板添加帮助文本\n
-                front 选项帮助前的帮助文本，输出时每行前会有两个空格\n
-                back 选项帮助后的帮助文本\n
-            两个参数均为None，则视为不显示帮助文本\n
+                short 指令的简短介绍\n
+                detail 指令的详细描述\n
+                *cases 指令的例子合集\n
+            不提供任何参数，则视为不显示帮助文本\n
             支持链式调用
         """
-        if not (front or back):
+        self.shortHelp=""
+        self.detailHelp=""
+        self.helpCase=tuple()
+        if not (short or detail or cases):
             self.showHelp=False
-            self.frontHelp=""
-            self.backHelp=""
         else:
             self.showHelp=True
-            if front:
-                self.frontHelp=front
-            if back:
-                self.backHelp=back
+            if short:
+                self.shortHelp=short.strip()
+            if detail:
+                self.detailHelp="\n".join([ l.strip() for l in detail.splitlines() if l.strip() ]) 
+            if cases:
+                self.helpCase=cases
         return self
 
-    def callback(self,*funcs):
+    @property
+    def headHelp(self):
+        """
+            帮助文本-头部，即指令名部分
+        """
+        text=""
+        prefix=self.typelist[0]
+        text+=f"{prefix}{self.name}"
+        names=[*self.nameset]
+        names.sort()
+        for n in names:
+            if n!=self.name:
+                text+=f"/{prefix}{n}"
+        return text
+
+    @property
+    def frontHelp(self):
+        """
+            帮助文本-前段
+        """
+        text=""
+        if self.shortHelp:
+            text+=self.shortHelp
+        if self.detailHelp:
+            text+="\n"
+            text+=self.detailHelp
+        return text.strip()
+
+    @property
+    def backHelp(self):
+        """
+            帮助文本-后段
+        """
+        return "\n".join(self.helpCase)
+
+    def onExecute(self,*funcs):
         """
             为指令模板添加更多执行回调\n
             支持链式调用
@@ -207,7 +264,7 @@ class Command(BaseCommand):
         self.events.onExecute(*funcs)
         return self
 
-    onExecute=callback
+    callback=onExecute
 
     def onError(self,*funcs):
         """
@@ -217,7 +274,7 @@ class Command(BaseCommand):
         self.events.onError(*funcs)
         return self
 
-class Option():
+class Option:
     """
         选项类\n
         选项前缀见 Option.shortPrefix 和 Option.longPrefix
@@ -225,17 +282,34 @@ class Option():
     shortPrefix="-"
     longPrefix="--"
 
-    @staticmethod
-    def getOptType(text):
+    @classmethod
+    def getOptType(cls,text):
         """
             返回OptType
         """
-        if text.startswith(Option.longPrefix):
+        if text.startswith(cls.longPrefix):
             return OptType.Long
-        elif text.startswith(Option.shortPrefix):
+        elif text.startswith(cls.shortPrefix):
             return OptType.Short
         else:
             return OptType.Not
+    
+    @classmethod
+    def sortOpts(cls,*opts):
+        """
+            将给定的各选项按名称、选项类型排序，短选项在长选项前
+        """
+        optNames=[*opts]
+        optNames.sort(key=lambda o: o.names[0])
+        if optNames and cls.getOptType(optNames[0].names[0])==OptType.Long: # 排序后可能长选项排在短选项前面
+            shortIdx=len(optNames)
+            for i,o in enumerate(optNames): # 找到列表中第一个短选项
+                if cls.getOptType(o.names[0])==OptType.Short:
+                    shortIdx=i
+                    break
+            optNames=optNames[shortIdx:]+optNames[:shortIdx] # 短选项在前，长选项在后
+        return optNames
+
 
     def __init__(self,names,hasValue=OptVal.Not,help=None,cmd:Command=None):
         """
@@ -263,19 +337,20 @@ class Option():
 
     def __str__(self):
         """
-            -a/-b/--c True/Text 这里是帮助
+            -a/-b/--c 这里是帮助
         """
         front="/".join(self.names)
-        if self.hasValue==OptVal.Not:
-            mid=" True "
-        elif self.hasValue==OptVal.Must:
-            mid=" Text "
-        else:
-            mid=" True/Text "
+        # if self.hasValue==OptVal.Not:
+        #     mid=" True "
+        # elif self.hasValue==OptVal.Must:
+        #     mid=" Text "
+        # else:
+        #     mid=" True/Text "
         back=""
         if self.help:
             back=self.help
-        return front+mid+back
+        # return front+mid+back
+        return f"{front} {back}"
 
     __repr__=__str__
 

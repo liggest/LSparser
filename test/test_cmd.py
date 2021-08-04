@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0,os.getcwd())
 
-from LSparser.command import CommandCore,OPT,Option
+from LSparser.command import CommandCore,OPT,Option,CommandHelper
 from LSparser import Events,Command,CommandParser,ParseResult
 
 def teardown_function():
@@ -254,3 +254,66 @@ def test_parse_events():
         cp.tryParse("!uno -s uno!")
         assert beforeTimes==6
         assert afterTimes==6
+
+def test_data():
+    class StringContaier:
+        extra="more than a string!"
+
+        def __init__(self,s):
+            self.s=s
+
+        def __str__(self) -> str:
+            return self.s
+
+    with CommandCore("main"):
+        cp=CommandParser()
+        cp.data["one"]="shot"
+        Command("cmd")
+        cp.tryParse( StringContaier(".cmd dmc") )
+
+        @Events.onBeforeParse
+        def before(pr:ParseResult, cp:CommandParser):
+            assert pr.data["one"]=="shot"
+            assert not "two" in pr.data
+        
+        @Events.onCmd("cmd")
+        def cmd(pr:ParseResult):
+            assert pr.raw.extra=="more than a string!"
+            pr.data["two"]="kick"
+        
+        @Events.onAfterParse
+        def after(pr:ParseResult, cp:CommandParser):
+            assert pr.data["one"]=="shot"
+            assert pr.data["two"]=="kick"
+
+def test_help():
+    with CommandCore("main"):
+        c=Command("cmd").names("CMD","Command")\
+            .opt(["-s","--straight"],OPT.Must,"val  Straight!")\
+            .opt(["-t","--tight"],OPT.Try,"[val]  Tight!")\
+            .opt(["--l","--long"],OPT.Not," Long!")\
+            .help("这是cmd",
+            """
+                cmd具有强大的功能
+                其中之一便是显示帮助
+                非常多的帮助
+            """,
+            ".cmd C M D",
+            ".cmd -s smile",
+            ".cmd -t T?",
+            ".cmd --l"
+            )
+        assert c.frontHelp=="这是cmd\ncmd具有强大的功能\n其中之一便是显示帮助\n非常多的帮助"
+        assert c.backHelp==".cmd C M D\n.cmd -s smile\n.cmd -t T?\n.cmd --l"
+        helper=CommandHelper()
+        assert helper.getHelp([".cmd"]).strip() == c.getHelp()
+        # print(c.getHelp())
+        # helper.lineLimit=2
+        # print(helper.getHelp([".cmd"],1))
+        # print(helper.getHelp([".cmd"],2))
+        # print(helper.getHelp([".cmd"],10))
+        # print(helper.getHelp([".cmd"],-5))
+        # helper.generateHelp([".cmd"])
+        # helper.generateMainHelp(startText="指令详情\n",endText="\n========")
+        # print(helper.getHelp([".cmd","--l","-t","-s"]))
+        

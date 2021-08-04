@@ -306,6 +306,7 @@ def test_help():
         assert c.frontHelp=="这是cmd\ncmd具有强大的功能\n其中之一便是显示帮助\n非常多的帮助"
         assert c.backHelp==".cmd C M D\n.cmd -s smile\n.cmd -t T?\n.cmd --l"
         helper=CommandHelper()
+        # helper=CommandHelper("./help/default")
         assert helper.getHelp([".cmd"]).strip() == c.getHelp()
         # print(c.getHelp())
         # helper.lineLimit=2

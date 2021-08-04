@@ -93,11 +93,11 @@ class CommandHelper:
             current=last
         if not pageContent:
             pageContent=current
-        if pageContent and not pageContent[-1].endswith("\n"):
+        if pageContent and not pageContent[-1].endswith("\n"): #加入换行，让页码能显示在正确的位置
             pageContent[-1]+="\n"
         page=min(totalPage,page)
         if totalPage>1:
-            pageContent.append(f"==={page}/{totalPage}===")
+            pageContent.append(f"==={page}/{totalPage}===") #添加页码
         return "".join(pageContent)
 
     def getHelpFilePath(self,target:list):
@@ -143,7 +143,7 @@ class CommandHelper:
         if helpText:
             filePath=self.getHelpFilePath(target) #优先覆盖已存在的
             if not filePath:
-                filePath=os.path.join(self.rootPath,*target,self.defaultFile)
+                filePath=os.path.join(self.rootPath,*target,self.defaultFile) #默认是 name/general.txt
             dir=os.path.dirname(filePath)
             if not os.path.exists(dir):
                 os.makedirs(dir,exist_ok=True)
@@ -166,9 +166,9 @@ class CommandHelper:
                 # hiddens 中的名称全部忽略
                 # defaultFile 和 defaultHidden 也忽略
                 continue
-            filePath=os.path.join(self.rootPath,n)
+            filePath=os.path.join(self.rootPath,n) #非目录直接拿文件
             if os.path.isdir(filePath):
-                filePath=os.path.join(filePath,self.defaultFile)
+                filePath=os.path.join(filePath,self.defaultFile) #拿目录里的 general.txt
             if os.path.exists(filePath):
                 helps[name]="  ".join(self.getFileShort(filePath))
         for cn in self.core.cmdlist:
@@ -186,7 +186,7 @@ class CommandHelper:
                     v=f"{cmd.typelist[0]}{n}  {v}"
                 else:
                     # v=f"{self.core.commandPrefix[0]}{n}  {v}" # 对于尚未定义的指令，可能指令前缀会出错
-                    v=f"{n}  {v}"
+                    v=f"{n}  {v}" # 先不添加指令前缀
             content+=f"{v}\n"
         if startText:
             content=f"{startText}\n{content}"
@@ -222,6 +222,9 @@ class CommandHelper:
             return cmd.headHelp
 
     def getHidden(self,dirPath):
+        """
+            得到目录中标记隐藏指令的文件
+        """
         hiddenPath=os.path.join(dirPath,self.defaultHidden)
         if not os.path.exists(hiddenPath):
             return None

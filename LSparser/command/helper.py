@@ -145,8 +145,7 @@ class CommandHelper:
             if not filePath:
                 filePath=os.path.join(self.rootPath,*target,self.defaultFile) #默认是 name/general.txt
             dir=os.path.dirname(filePath)
-            if not os.path.exists(dir):
-                os.makedirs(dir,exist_ok=True)
+            self.ensureDir(dir)
             with open(filePath,"w",encoding="utf-8") as f:
                 f.write(helpText)
             print("生成了帮助文本：",filePath)
@@ -157,9 +156,9 @@ class CommandHelper:
                 startText 在指令列表前附加额外内容\n
                 endText 在指令列表后附加额外内容\n
         """
+        self.ensureDir(self.rootPath)
         helps={}
         hiddens=self.getHidden(self.rootPath)
-
         for n in os.listdir(self.rootPath):
             name,_=os.path.splitext(n)
             if name in helps or (hiddens and name in hiddens) or n==self.defaultFile or n==self.defaultHidden:
@@ -233,7 +232,14 @@ class CommandHelper:
             for line in f:
                 hiddens.add(line.strip())
         return hiddens
-            
+    
+    def ensureDir(self,dir):
+        """
+            保证目录存在
+        """
+        if not os.path.exists(dir):
+            os.makedirs(dir,exist_ok=True)
+
         
 
 

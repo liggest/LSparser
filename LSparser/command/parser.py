@@ -3,10 +3,12 @@
     解析指令
 """
 #from .util import *
-from . import CommandCore,BaseCommand,Option,OPT,OptType
+from . import CommandCore,BaseCommand,Command,Option,OPT,OptType
 from ..event import EventNames
 
 from enum import IntEnum
+
+import asyncio
 
 class CommandState(IntEnum):
     Unknown=-1          #未解析
@@ -32,8 +34,8 @@ class ParseResult:
         self.output=[]
         self._data=None #用来携带一些额外的数据
         self.parser=parser
-        if self.parser:
-            self._data=self.parser._data # 从 parser 中继承 _data 的引用
+        # if self.parser:
+        #     self.data["parser"]=self.parser._data # 从 parser 中继承 _data 的引用
 
     def __contains__(self,key):
         return key in self.args
@@ -58,6 +60,9 @@ class ParseResult:
 
     @property
     def data(self):
+        """
+            可携带的一些额外数据
+        """
         if not self._data:
             self._data={}
         return self._data
@@ -65,6 +70,38 @@ class ParseResult:
     @data.setter
     def data(self,val):
         self._data=val
+
+    @property
+    def dataArgs(self):
+        """
+            tryParse 方法中额外的 *args
+        """
+        return self.data.get("args",())
+
+    @dataArgs.setter
+    def dataArgs(self,val):
+        if val:
+            self.data["args"]=val
+
+    @property
+    def dataKW(self):
+        """
+            tryParse 方法中额外的 **kw
+        """
+        return self.data.get("kw",{})
+
+    @dataKW.setter
+    def dataKW(self,val):
+        if val:
+            self.data["kw"]=val
+
+    @property
+    def parserData(self):
+        """
+            解析器可能携带的一些额外数据
+        """
+        if self.parser:
+            return self.parser.data
 
     def hasOpt(self):
         """
@@ -240,7 +277,7 @@ class CommandParser:
         """
             解析指令\n
             需要在为指令添加好所有选项后调用\n
-                pr 供解析用的 ParseResult 对象，默认为 None，使用最后一次经解析器处理过的对象
+                pr 供解析用的 ParseResult 对象
         """
         if pr is None:
             pr=self.result
@@ -275,6 +312,9 @@ class CommandParser:
         return pr
 
     def getLong(self,con,hasValue):
+        """
+            解析中得到一个长选项
+        """
         arg=con[0]
         con=con[1:]
         if hasValue!=OPT.Not:
@@ -289,6 +329,9 @@ class CommandParser:
         return arg,val,con
 
     def getShort(self,con,hasValue):
+        """
+            解析中得到一个短选项
+        """
         arg=con[0]
         con=con[1:]
         if hasValue==OPT.Not or (not con) or (hasValue==OPT.Try and Option.getOptType(con[0])!=OptType.Not ):
@@ -299,36 +342,82 @@ class CommandParser:
         return arg,val,con
 
 
-    def tryParse(self,t):
+    def tryParse(self,t,*args,**kw):
         """
             尝试解析给定文本\n
-            如果是在指令模板中定义过的指令，则直接解析、调用回调函数、以列表的形式返回各个函数运行结果\n
-            如果 没有为指令模板附加回调函数 或 指令没在指令模板中定义过 或 根本不是指令，则返回None\n
-                t 文本\n
+            解析指令、调用回调函数、返回解析结果对象\n
+                t 文本或可以转换成文本的对象\n
+                剩余参数将作为解析结果对象的额外数据\n
         """
         pr=self.getCommand(t)
+        pr.dataArgs=args
+        pr.dataKW=kw
         self.core.EM.send(EventNames.BeforeParse,pr,self)
-        if pr and pr.state==CommandState.DefinedCommand:
+        if pr and pr.isDefinedCommand():
             pr=self.parse(pr)
+            cmd:Command=pr._cmd
             try:
-                pr.output=pr._cmd.events.sendExecute(pr)
+                cmd.events.sendExecute(pr,pr) #第二个 pr 会传入回调函数
+                #第一个 pr 使得回调结果存入 output 中
             except Exception as err:
-                pr.output=pr._cmd.events.sendError(pr,err)
+                cmdErrorHandle=cmd.events.sendError(pr,pr,err) #第二个 pr 和 err 会传入回调函数
                 errorHandle=self.core.EM.send(EventNames.ExecuteError,pr,self,err)
-                if not pr.output and not any(errorHandle):
+                if not cmdErrorHandle and not any(errorHandle):
                     raise err #没处理的话还是要抛出错误的
-        else:
-            self.sendEvents(pr)
+        elif not pr.isCommand():
+        #各种事件
+            self.core.EM.send(EventNames.NotCmd,pr,self)
+        elif not pr.isDefinedCommand():
+            self.core.EM.send(EventNames.UndefinedCmd,pr,self)
+        elif pr.isWrongType():
+            self.core.EM.send(EventNames.WrongCmdType,pr,self)
+            # self.sendEvents(pr)
         self.core.EM.send(EventNames.AfterParse,pr,self)
         return pr
 
-    def sendEvents(self,result:ParseResult):
-        if not result.isCommand():
-            self.core.EM.send(EventNames.NotCmd,result,self)
-        elif not result.isDefinedCommand():
-            self.core.EM.send(EventNames.UndefinedCmd,result,self)
-        elif result.isWrongType():
-            self.core.EM.send(EventNames.WrongCmdType,result,self)
+    # def sendEvents(self,result:ParseResult):
+    #     if not result.isCommand():
+    #         self.core.EM.send(EventNames.NotCmd,result,self)
+    #     elif not result.isDefinedCommand():
+    #         self.core.EM.send(EventNames.UndefinedCmd,result,self)
+    #     elif result.isWrongType():
+    #         self.core.EM.send(EventNames.WrongCmdType,result,self)
+
+    async def asyncTryParse(self,t,*args,**kw):
+        """
+            尝试解析给定文本\n
+            解析指令、异步调用回调函数、返回解析结果对象\n
+                t 文本或可以转换成文本的对象\n
+                剩余参数将作为解析结果对象的额外数据\n
+        """
+        pr=self.getCommand(t)
+        pr.dataArgs=args
+        pr.dataKW=kw
+        await self.core.EM.asyncSend(EventNames.BeforeParse,pr,self)
+        if pr and pr.isDefinedCommand():
+            pr=self.parse(pr)
+            cmd:Command=pr._cmd
+            try:
+                await cmd.events.asyncSendExecute(pr,pr) #第二个 pr 会传入回调函数
+                #第一个 pr 使得回调结果存入 output 中
+            except Exception as err:
+                cmdErrTsk=asyncio.create_task( cmd.events.asyncSendError(pr,pr,err) ) #第二个 pr 和 err 会传入回调函数
+                parserErrTsk=asyncio.create_task( self.core.EM.asyncSend(EventNames.ExecuteError,pr,self,err) )
+                cmdErrorHandle=await cmdErrTsk
+                errorHandle=await parserErrTsk #暂时不知道这样搞好不好
+                if not cmdErrorHandle and not any(errorHandle):
+                    raise err #没处理的话还是要抛出错误的
+        elif not pr.isCommand():
+        #各种事件
+            await self.core.EM.asyncSend(EventNames.NotCmd,pr,self)
+        elif not pr.isDefinedCommand():
+            await self.core.EM.asyncSend(EventNames.UndefinedCmd,pr,self)
+        elif pr.isWrongType():
+            await self.core.EM.asyncSend(EventNames.WrongCmdType,pr,self)
+            # self.sendEvents(pr)
+        await self.core.EM.asyncSend(EventNames.AfterParse,pr,self)
+        return pr
+
 
 if __name__=="__main__":
     cp=CommandParser()

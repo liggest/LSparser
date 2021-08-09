@@ -47,17 +47,81 @@ class CommandEvents:
             print(f"将 {otherName} 指令的回调纳入 {self.name} 指令")
             self.EM.merge(self.eventName,otherEventName)
 
-    def sendExecute(self,*args,**kw):
+    def send(self,name,pr=None,*args,**kw):
         """
-            触发执行回调
+            触发回调
         """
-        return self.EM.send(self.eventName,*args,**kw)
+        if not pr is None:
+            result=[]
+            for r in self.EM.sendGen(name,*args,**kw):
+                pr.output.append(r)
+                result.append(r)
+            return result
+        return self.EM.send(name,*args,**kw)
 
-    def sendError(self,*args,**kw):
+    async def asyncSend(self,name,pr=None,*args,**kw):
         """
-            触发报错回调
+            异步触发回调
         """
-        return self.EM.sendSub(self.eventName,CommandEvents.Error,*args,**kw)
+        if not pr is None:
+            result=[]
+            async for r in self.EM.asyncSendGen(name,*args,**kw):
+                pr.output.append(r)
+                result.append(r)
+            return result
+        return await self.EM.asyncSend(name,*args,**kw)
+
+    def sendExecute(self,pr=None,*args,**kw):
+        """
+            触发执行回调\n
+                pr 解析结果对象，不为 None 则回调结果会传入其 output 中
+        """
+        return self.send(self.eventName,pr,*args,**kw)
+
+    async def asyncSendExecute(self,pr=None,*args,**kw):
+        """
+            异步触发执行回调\n
+                pr 解析结果对象，不为 None 则回调结果会传入其 output 中
+        """
+        return await self.asyncSend(self.eventName,pr,*args,**kw)
+
+    def sendSub(self,name,subName,pr=None,*args,**kw):
+        """
+            触发子事件回调
+        """
+        if not pr is None:
+            result=[]
+            for r in self.EM.sendSubGen(name,subName,*args,**kw):
+                pr.output.append(r)
+                result.append(r)
+            return result
+        return self.EM.sendSub(name,subName,*args,**kw)
+
+    async def asyncSendSub(self,name,subName,pr=None,*args,**kw):
+        """
+            异步触发子事件回调
+        """
+        if not pr is None:
+            result=[]
+            async for r in self.EM.asyncSendSubGen(name,subName,*args,**kw):
+                pr.output.append(r)
+                result.append(r)
+            return result
+        return await self.EM.asyncSend(name,*args,**kw)
+
+    def sendError(self,pr=None,*args,**kw):
+        """
+            触发报错回调\n
+                pr 解析结果对象，不为 None 则回调结果会传入其 output 中
+        """
+        return self.sendSub(self.eventName,CommandEvents.Error,pr,*args,**kw)
+
+    async def asyncSendError(self,pr=None,*args,**kw):
+        """
+            异步触发报错回调\n
+                pr 解析结果对象，不为 None 则回调结果会传入其 output 中
+        """
+        return await self.asyncSendSub(self.eventName,CommandEvents.Error,pr,*args,**kw)
 
 # 这个在py3.9以下用不了……
 # 只能使用 event.py 中的替代方案

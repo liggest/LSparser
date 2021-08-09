@@ -32,8 +32,7 @@ def notCmd(pr:ParseResult,cp:CommandParser):
 @Events.onUndefinedCmd
 def cmdUndefined(pr:ParseResult,cp:CommandParser):
     if pr.command=="test": #判断指令名
-        pr.opt("-ts1",OPT.Must).opt("-opt",OPT.Not).opt(["-j","--j"],OPT.Try)
-        pr=cp.parse(pr)
+        pr.opt("-ts1",OPT.Must).opt("-opt",OPT.Not).opt(["-j","--j"],OPT.Try).parse()
         print(pr)
         #根据指令名设定选项，再次解析
         #可以在这里处理指令
@@ -41,8 +40,9 @@ def cmdUndefined(pr:ParseResult,cp:CommandParser):
 #解析到指令，但指令前缀和定义时不匹配
 @Events.onWrongCmdType
 def wrongType(pr:ParseResult,cp:CommandParser):
-    #可以在这里处理错误
-    pass
+    if pr.type=="$":
+        #可以在这里处理错误
+        pass
 
 #解析指令
 cmd=".cmd param1 param2 -s1 -s2 s2val --l lval1 lval2 lval3"
@@ -53,6 +53,33 @@ print("args:",pr.args) #选项
 # => {'s1': True, 's2': 's2val', 'l': ['lval1', 'lval2', 'lval3']}
 print("output:",pr.output) #回调函数执行结果
 # => ["返回值","随便返回些什么"]
+
+#更多的事件
+# @Events.onCmd.error("cmd")
+# @Events.onBeforeParse
+# @Events.onAfterParse
+# @Events.onExecuteError
+
+#解析时传入额外数据
+Command("extra")
+@Events.onCmd("extra")
+def extraFunc(pr:ParseResult):
+    print(pr.dataArgs)  #=> ('R', 'P', 'K')
+    print(pr.dataKW)    #=> {'atk': 3000, 'def': 2500}
+
+cp.tryParse(".extra",*["R","P","K"],**{"atk":3000,"def":2500})
+
+#异步支持
+async def ainit():
+    Command("async")
+    @Events.onCmd("async")
+    async def asyncFunc(pr:ParseResult):
+        pass
+    pr=await cp.asyncTryParse(".async")
+    # print(pr)
+
+import asyncio
+asyncio.run(ainit())
 
 #额外功能，比较文本和各指令的相似度
 similist=cp.core.getCmdSimilarity("zmd",top=5)

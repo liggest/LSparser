@@ -57,7 +57,7 @@
     def cmdfunc(pr:ParseResult):
         # result 为 ParseResult 对象
         print("一个回调函数")
-        print(pr) #解析结果储存在对象中
+        print(pr) #解析结果储存在其中
         return "返回值"
 ```
 解析指令
@@ -67,7 +67,7 @@
     pr:ParseResult=cp.tryParse(cmd)
     print("args:",pr.args) #选项
     print("output: ",pr.output) #回调函数执行结果
-    # => ["返回值","随便返回些什么"]
+    # => ["返回值"]
 ```
 
 进阶地，指令解析后各种情况
@@ -83,8 +83,8 @@
     @Events.onUndefinedCmd
     def cmdUndefined(pr:ParseResult,cp:CommandParser):
         if pr.command=="test": #判断指令名
-            cp.opt("-ts1",OPT.Must).opt("-opt",OPT.Not).opt(["-j","--j"],OPT.Try)
-            pr=cp.parse(pr)
+            pr.opt("-ts1",OPT.Must).opt("-opt",OPT.Not).opt(["-j","--j"],OPT.Try)
+            pr.parse()
             #根据指令名设定选项，再次解析
             #可以在这里处理指令
 ```
@@ -92,10 +92,39 @@
 ```Python
     @Events.onWrongCmdType
     def wrongType(pr:ParseResult,cp:CommandParser):
-        #可以在这里处理错误
-        pass
+        if pr.type=="$":
+            #可以在这里处理错误
+            pass
 ```
-额外地，可以比较文本和各指令间的相似度
+一些额外内容
+- 更多事件
+```Python
+    @Events.onCmd.error("cmd")
+    @Events.onBeforeParse
+    @Events.onAfterParse
+    @Events.onExecuteError
+    ...
+```
+- 解析时提供额外数据
+```Python
+    Command("extra")
+    @Events.onCmd("extra")
+    def extraFunc(pr:ParseResult):
+        print(pr.dataArgs) #=> ('R', 'P', 'K')
+        print(pr.dataKW)   #=> {'atk': 3000, 'def': 2500}
+
+    cp.tryParse(".extra",*["R","P","K"],**{"atk":3000,"def":2500})
+```
+- 异步支持
+```Python
+    async def ainit():
+        Command("async")
+        @Events.onCmd("async")
+        async def asyncFunc(pr:ParseResult):
+            pass
+        pr=await cp.asyncTryParse(".async")
+```
+- 比较文本和各指令间的相似度
 ```Python
     similist=cp.core.getCmdSimilarity("zmd",top=5)
 ```

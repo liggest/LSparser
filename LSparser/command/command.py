@@ -5,7 +5,7 @@
 from os import terminal_size
 from . import CommandCore
 from ..event import CommandEvents
-from ..util import indent
+from ..util.str import indent
 
 from enum import IntEnum
 

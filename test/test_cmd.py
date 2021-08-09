@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0,os.getcwd())
 
-from LSparser.command import CommandCore,OPT,Option,CommandHelper
+from LSparser.command import CommandCore,OPT,Option,CommandHelper,OptType
 from LSparser import Events,Command,CommandParser,ParseResult
 
 def teardown_function():
@@ -48,6 +48,9 @@ def test_opt():
             Option([])
         with pytest.raises(ValueError):
             Option("")
+        assert Option.getOptType("--s") == OptType.Long
+        assert Option.getOptType("-!d") == OptType.Short
+        assert Option.getOptType("not") == OptType.Not
         assert Option(["-s","--c","-!d"]).name=="s"
         assert Option(["--c","-!d","-s"]).name=="c"
         assert Option("-e",OPT.M).hasValue==OPT.Must
@@ -113,8 +116,8 @@ def test_event():
             return [][5]
         
         @Events.onCmd.error("error")
-        def _(result,err):
-            print(err)
+        def _(result,err:Exception):
+            assert str(err)=="list index out of range"
             return err
 
         c=Command("error")
@@ -163,6 +166,44 @@ def test_event():
         assert core.EM.hasSub(c.events.eventName,"error")
         assert len(core.EM.events[c.events.eventName])==1
         assert len(core.EM.events[c.events.eventName].subs["error"])==1
+
+        outputLen=0
+        @Events.onCmd("ultra-error")
+        @Events.onCmd("ultra-error")
+        @Events.onCmd("ultra-error")
+        def onUltra(result):
+            nonlocal outputLen
+            # print(result.output)
+            assert len(result.output)==outputLen
+            outputLen+=1
+            return result.command
+        
+        @Events.onCmd("ultra-error")
+        def _(result):
+            return [][5]
+        
+        Events.onCmd("ultra-error")(onUltra)
+        Events.onCmd("ultra-error")(onUltra)
+        Events.onCmd("ultra-error")(onUltra)
+
+        @Events.onCmd.error("ultra-error")
+        @Events.onCmd.error("ultra-error")
+        @Events.onCmd.error("ultra-error")
+        def _(result,err):
+            nonlocal outputLen
+            # print(result.output)
+            assert len(result.output)==outputLen
+            outputLen+=1
+            return err
+
+        c=Command("ultra-error")
+        assert len(core.EM.events[c.events.eventName])==7
+        assert len(core.EM.events[c.events.eventName].subs["error"])==3
+        pr=cp.tryParse("!ultra-error")
+        assert len(pr.output)==outputLen==6
+        assert pr.output[0]==pr.command
+        assert isinstance(pr.output[-1],IndexError)
+
 
 def test_parse():
     with CommandCore("main"):
@@ -292,7 +333,7 @@ def test_parse_events():
             return True
         
         assert cp.tryParse(".raise").output==[]
-        
+              
 
 def test_data():
     class StringContaier:
@@ -308,11 +349,10 @@ def test_data():
         cp=CommandParser()
         cp.data["one"]="shot"
         Command("cmd")
-        cp.tryParse( StringContaier(".cmd dmc") )
 
         @Events.onBeforeParse
         def before(pr:ParseResult, cp:CommandParser):
-            assert pr.data["one"]=="shot"
+            assert pr.parserData["one"]=="shot"
             assert not "two" in pr.data
         
         @Events.onCmd("cmd")
@@ -322,8 +362,31 @@ def test_data():
         
         @Events.onAfterParse
         def after(pr:ParseResult, cp:CommandParser):
-            assert pr.data["one"]=="shot"
+            assert pr.parserData["one"]=="shot"
             assert pr.data["two"]=="kick"
+
+        cp.tryParse( StringContaier(".cmd dmc") )
+
+        Command("extra")
+        @Events.onBeforeParse
+        def _(pr:ParseResult, cp:CommandParser):
+            ex1,ex2=pr.dataArgs
+            kw=pr.dataKW
+            ex3=kw["ex3"]
+            ex4=kw["ex4"]
+            assert ex1==42
+            assert ex2=="TTT"
+            assert ex3==...
+            assert ex4==(True,False)
+
+        @Events.onCmd("extra")
+        def _(pr:ParseResult):
+            pr.data["two"]="kick"
+            return pr.dataArgs,pr.dataKW
+
+        out=cp.tryParse(".extra",42,"TTT",ex3=...,ex4=(True,False)).output[0]
+        assert out[0]==(42,"TTT")
+        assert out[1]=={"ex3":...,"ex4":(True,False)}
 
 def test_help():
     with CommandCore("main"):

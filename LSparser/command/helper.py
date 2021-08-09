@@ -2,7 +2,7 @@
     辅助查看、生成指令的帮助信息
 """
 from . import CommandCore,Command,Option
-from ..util import indent
+from ..util.str import indent
 
 import os
 from io import StringIO

@@ -129,7 +129,7 @@ class CommandCore:
         """
             判断文本是否和前缀列表中的前缀匹配\n
                 text 文本\n
-            前缀列表见指令中枢对象的 commandPrefix 属性
+            潜在前缀列表见指令中枢对象的 potentialPrefix 属性
         """
         temp=text.lstrip()
         if temp=="":

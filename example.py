@@ -81,6 +81,12 @@ async def ainit():
 import asyncio
 asyncio.run(ainit())
 
+#不解析，手动构建解析结果并执行
+pr=ParseResult.fromCmd(cp,".cmd",params=["param1","param2"],
+    args={"s1":True,"s2":"s2val","l":["lval1","lval2","lval3"]}
+)
+pr.execute()
+
 #额外功能，比较文本和各指令的相似度
 similist=cp.core.getCmdSimilarity("zmd",top=5)
 print(similist)

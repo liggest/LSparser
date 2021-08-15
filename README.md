@@ -124,6 +124,13 @@
             pass
         pr=await cp.asyncTryParse(".async")
 ```
+- 不解析，手动构建解析结果并执行
+```Python
+    pr=ParseResult.fromCmd(cp,".cmd",params=["param1","param2"],
+        args={"s1":True,"s2":"s2val","l":["lval1","lval2","lval3"]}
+    )
+    pr.execute()
+```
 - 比较文本和各指令间的相似度
 ```Python
     similist=cp.core.getCmdSimilarity("zmd",top=5)

@@ -284,12 +284,17 @@ def test_parse_events():
 
         @Events.onWrongCmdType
         def wrong(pr:ParseResult,cp:CommandParser):
+            assert pr.isDefinedCommand()
             assert pr.command=="uno"
             assert pr.type=="!"
             assert not "s" in pr
             pr.type="$"
             pr.parse()
             assert pr["s"]=="uno!"
+
+        @Events.onCmd("uno")
+        def noExecute(_):
+            raise RuntimeError("此回调不该被执行")
 
         Command("cmd").opt("-s").opt("-c",OPT.M)
         Command("uno",types=["$","#"]).opt("-s",OPT.M)
@@ -334,16 +339,16 @@ def test_parse_events():
         
         assert cp.tryParse(".raise").output==[]
               
+class StringContaier:
+    extra="more than a string!"
+
+    def __init__(self,s):
+        self.s=s
+
+    def __str__(self) -> str:
+        return self.s
 
 def test_data():
-    class StringContaier:
-        extra="more than a string!"
-
-        def __init__(self,s):
-            self.s=s
-
-        def __str__(self) -> str:
-            return self.s
 
     with CommandCore("main"):
         cp=CommandParser()
@@ -419,4 +424,45 @@ def test_help():
         # helper.generateHelp([".cmd"])
         # helper.generateMainHelp(startText="指令详情\n",endText="\n========")
         # print(helper.getHelp([".cmd","--l","-t","-s"]))
-        
+
+
+def test_execute():
+    with CommandCore("main"):
+        cp=CommandParser()
+        Command("cmd").opt("-s",OPT.M).opt("-t",OPT.T).opt("-f",OPT.N).opt(["-c","--c"],OPT.M)
+
+        @Events.onCmd("cmd")
+        def cmdExecute(pr:ParseResult):
+            assert pr["s"]
+            assert pr["t"]
+            if pr.data.get("exe"):
+                return "from execute"
+            return "from parse"
+        pr=cp.tryParse(".cmd -s mile -t ea QwQ QwQ")
+        assert pr["t"]=="ea"
+        assert pr.paramStr=="QwQ QwQ"
+        assert pr.output==["from parse"]
+        assert not pr["f"]
+        assert isinstance(pr.raw,str)
+
+        pr=ParseResult.fromCmd(cp,"!cmd",params=["QAQ","QAQ"],args={"s":"our","t":True,"f":True},
+            type=None,raw=StringContaier("exe cmd"))
+        pr.data["exe"]=True
+        pr=pr.execute()
+        assert pr["t"]==True
+        assert pr.paramStr=="QAQ QAQ"
+        assert pr.output==["from execute"]
+        assert pr["f"]
+        assert isinstance(pr.raw,StringContaier)
+        assert pr._cons==["exe","cmd"]
+        assert pr.type=="!"
+
+        pr=ParseResult.fromCmd(cp,"cmd",params=["Cost","tosC"],
+            args={"s":"our","t":("A","Z"),"c":[386,"<>",True]},type="!")
+        pr.data["exe"]=True
+        pr=pr.execute()
+        assert pr["t"]==("A","Z") # 通过字符串解析的话 t 是没法取到这个值的
+        assert pr.paramStr=="Cost tosC"
+        assert pr.raw=="!cmd Cost tosC -s our -t A Z --c 386 <> True"
+        assert pr.type=="!"
+

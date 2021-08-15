@@ -9,6 +9,7 @@ from ..event import EventNames
 from enum import IntEnum
 
 import asyncio
+import typing
 
 class CommandState(IntEnum):
     Unknown=-1          #未解析
@@ -22,6 +23,23 @@ class ParseResult:
         指令解析结果
     """
 
+    CommandState=CommandState
+
+    @staticmethod
+    def fromCmd(parser:"CommandParser",command:typing.Union[str,Command],
+        params:list=(),args:typing.Dict[str,typing.Any]=None,
+        type:str=None,raw=None):
+        """
+            从指令、参数、选项等反向构建解析结果对象\n
+                parser 解析器\n
+                command 指令对象或指令名，指令名如 `"cmd"`、`".cmd"`\n
+                *params 参数\n
+                **args 选项，无需选项前缀\n
+                type 指令前缀，如 `"."`，默认为`None`\n
+                raw 原始指令（传入 `tryParse` 时的指令），默认为`None`\n
+        """
+        return parser.buildResult(command,params,args,type,raw)
+
     def __init__(self,parser:"CommandParser"=None):
         self.command=""
         self.type=""
@@ -34,6 +52,7 @@ class ParseResult:
         self.output=[]
         self._data=None #用来携带一些额外的数据
         self.parser=parser
+        self._parent:ParseResult=None #预留，方便编写嵌套指令
         # if self.parser:
         #     self.data["parser"]=self.parser._data # 从 parser 中继承 _data 的引用
 
@@ -53,7 +72,8 @@ class ParseResult:
                 result+=f"{k}: {v}\n"
         return result.strip() #基本输出的是 self 的内容，只不过格式漂亮一点
 
-    __repr__=__str__
+    def __repr__(self):
+        return f"<ParseResult: {self.raw}>"
 
     def __bool__(self):
         return self.isCommand()
@@ -197,14 +217,39 @@ class ParseResult:
         self._cmd.opt(names,hasValue)
         return self
 
+    def _checkParser(self):
+        """
+            检查解析器是否存在，无解析器则抛出异常
+        """
+        if not self.parser:
+            raise ValueError("没找到解析器！可能本解析结果不是通过解析器产生的…")
+        return self.parser
+        
     def parse(self):
         """
             让解析器解析指令\n
             需要在为指令添加好所有选项后调用\n
         """
-        if self.parser:
-            return self.parser.parse(self)
-        raise ValueError("没找到解析器！可能本解析结果不是通过解析器产生的…")
+        parser=self._checkParser()
+        return parser.parse(self)
+    
+    def execute(self):
+        """
+            手动让解析器执行指令\n
+            不经过解析，直接调用与指令执行相关的回调，无法执行时抛出错误\n
+            仅能触发指令的执行回调、报错回调、`onExecuteError` 等
+        """
+        parser=self._checkParser()
+        return parser.execute(self)
+
+    async def asyncExecute(self):
+        """
+            手动让解析器执行指令\n
+            不经过解析，直接异步调用与指令执行相关的回调，无法执行时抛出错误\n
+            仅能触发指令的执行回调、报错回调、`onExecuteError` 等
+        """
+        parser=self._checkParser()
+        return await parser.asyncExecute(self)
 
 class CommandParser:
     '''
@@ -341,6 +386,34 @@ class CommandParser:
             con=con[1:]
         return arg,val,con
 
+    def recheckCmd(self,pr:ParseResult):
+        """
+            检查与解析结果对应的指令，对可能存在的问题抛出异常
+        """
+        cmd:Command=pr._cmd
+        if not cmd:
+            raise ValueError(f"{repr(pr)} 无对应指令")
+        if not hasattr(cmd,"events"):
+            raise ValueError(f"{repr(pr)} 可能对应未定义指令")
+        return cmd
+
+    def execute(self,pr:ParseResult):
+        """
+            执行解析结果对应的指令\n
+            不经过解析，直接调用与指令执行相关的回调，无法执行时抛出错误\n
+            仅能触发指令的执行回调、报错回调、`onExecuteError` 等
+        """
+        cmd:Command=self.recheckCmd(pr)
+        try:
+            cmd.events.sendExecute(pr,pr) #第二个 pr 会传入回调函数
+            #第一个 pr 使得回调结果存入 output 中
+        except Exception as err:
+            cmdErrorHandle=cmd.events.sendError(pr,pr,err) #第二个 pr 和 err 会传入回调函数
+            #第一个 pr 使得回调结果存入 output 中
+            errorHandle=self.core.EM.send(EventNames.ExecuteError,pr,self,err)
+            if not cmdErrorHandle and not any(errorHandle):
+                raise err #没处理的话还是要抛出错误的
+        return pr
 
     def tryParse(self,t,*args,**kw):
         """
@@ -353,17 +426,9 @@ class CommandParser:
         pr.dataArgs=args
         pr.dataKW=kw
         self.core.EM.send(EventNames.BeforeParse,pr,self)
-        if pr and pr.isDefinedCommand():
+        if pr and pr.state==CommandState.DefinedCommand: # 不能包括 WrongCommand
             pr=self.parse(pr)
-            cmd:Command=pr._cmd
-            try:
-                cmd.events.sendExecute(pr,pr) #第二个 pr 会传入回调函数
-                #第一个 pr 使得回调结果存入 output 中
-            except Exception as err:
-                cmdErrorHandle=cmd.events.sendError(pr,pr,err) #第二个 pr 和 err 会传入回调函数
-                errorHandle=self.core.EM.send(EventNames.ExecuteError,pr,self,err)
-                if not cmdErrorHandle and not any(errorHandle):
-                    raise err #没处理的话还是要抛出错误的
+            pr=self.execute(pr)
         elif not pr.isCommand():
         #各种事件
             self.core.EM.send(EventNames.NotCmd,pr,self)
@@ -371,17 +436,28 @@ class CommandParser:
             self.core.EM.send(EventNames.UndefinedCmd,pr,self)
         elif pr.isWrongType():
             self.core.EM.send(EventNames.WrongCmdType,pr,self)
-            # self.sendEvents(pr)
         self.core.EM.send(EventNames.AfterParse,pr,self)
         return pr
 
-    # def sendEvents(self,result:ParseResult):
-    #     if not result.isCommand():
-    #         self.core.EM.send(EventNames.NotCmd,result,self)
-    #     elif not result.isDefinedCommand():
-    #         self.core.EM.send(EventNames.UndefinedCmd,result,self)
-    #     elif result.isWrongType():
-    #         self.core.EM.send(EventNames.WrongCmdType,result,self)
+    async def asyncExecute(self,pr:ParseResult):
+        """
+            执行解析结果对应的指令\n
+            不经过解析，直接异步调用与指令执行相关的回调，无法执行时抛出错误\n
+            仅能触发指令的执行回调、报错回调、`onExecuteError` 等
+        """
+        cmd:Command=self.recheckCmd(pr)
+        try:
+            await cmd.events.asyncSendExecute(pr,pr) #第二个 pr 会传入回调函数
+            #第一个 pr 使得回调结果存入 output 中
+        except Exception as err:
+            cmdErrTsk=asyncio.create_task( cmd.events.asyncSendError(pr,pr,err) ) #第二个 pr 和 err 会传入回调函数
+            #第一个 pr 使得回调结果存入 output 中
+            parserErrTsk=asyncio.create_task( self.core.EM.asyncSend(EventNames.ExecuteError,pr,self,err) )
+            cmdErrorHandle=await cmdErrTsk
+            errorHandle=await parserErrTsk #暂时不知道这样搞好不好
+            if not cmdErrorHandle and not any(errorHandle):
+                raise err #没处理的话还是要抛出错误的
+        return pr
 
     async def asyncTryParse(self,t,*args,**kw):
         """
@@ -394,19 +470,9 @@ class CommandParser:
         pr.dataArgs=args
         pr.dataKW=kw
         await self.core.EM.asyncSend(EventNames.BeforeParse,pr,self)
-        if pr and pr.isDefinedCommand():
+        if pr and pr.state==CommandState.DefinedCommand: # 不能包括 WrongCommand
             pr=self.parse(pr)
-            cmd:Command=pr._cmd
-            try:
-                await cmd.events.asyncSendExecute(pr,pr) #第二个 pr 会传入回调函数
-                #第一个 pr 使得回调结果存入 output 中
-            except Exception as err:
-                cmdErrTsk=asyncio.create_task( cmd.events.asyncSendError(pr,pr,err) ) #第二个 pr 和 err 会传入回调函数
-                parserErrTsk=asyncio.create_task( self.core.EM.asyncSend(EventNames.ExecuteError,pr,self,err) )
-                cmdErrorHandle=await cmdErrTsk
-                errorHandle=await parserErrTsk #暂时不知道这样搞好不好
-                if not cmdErrorHandle and not any(errorHandle):
-                    raise err #没处理的话还是要抛出错误的
+            pr=await self.asyncExecute(pr)
         elif not pr.isCommand():
         #各种事件
             await self.core.EM.asyncSend(EventNames.NotCmd,pr,self)
@@ -414,10 +480,70 @@ class CommandParser:
             await self.core.EM.asyncSend(EventNames.UndefinedCmd,pr,self)
         elif pr.isWrongType():
             await self.core.EM.asyncSend(EventNames.WrongCmdType,pr,self)
-            # self.sendEvents(pr)
         await self.core.EM.asyncSend(EventNames.AfterParse,pr,self)
         return pr
 
+    def buildResult(self,command:typing.Union[str,Command],
+        params:list=(),args:typing.Dict[str,typing.Any]=None,
+        type:str=None,raw=None):
+        """
+            从指令、参数、选项等反向构建解析结果对象
+        """
+        pr=ParseResult(self)
+        pr.state=CommandState.NotCommand
+        if isinstance(command,str):
+            if self.core.isMatchPrefix(command):
+                pr.type=command[0]
+                pr.command=command[1:]
+            else:
+                pr.command=command
+            _cmd=self.core.cmds.get(pr.command)
+        elif isinstance(command,Command):
+            _cmd=command
+            pr.command=_cmd.name
+        if not pr.type and type:
+            pr.type=type
+        if pr.command: #非空指令
+            pr.state=CommandState.Command
+            pr._cmd=_cmd
+            pr.params=[*params]
+            if args:
+                pr.args=args
+            if pr._cmd:
+                pr.state=CommandState.DefinedCommand
+                if not pr.type:
+                    pr.type=pr._cmd.typelist[0]
+                if not pr.type in pr._cmd.typelist:
+                    pr.state=CommandState.WrongType
+            else:
+                if not pr.type:
+                    pr.type=self.core.commandPrefix[0]
+                pr._cmd=BaseCommand(f"{pr.type}{pr.command}",coreName=self.core.name)
+        if raw:
+            pr.raw=raw
+            if not isinstance(raw,str):
+                raw=str(raw)
+            pr._cons=raw.strip().split()
+        else:
+            if pr.type or pr.command:
+                pr._cons.append(f"{pr.type}{pr.command}")
+            pr._cons+=[str(x) for x in pr.params]
+            for k,v in pr.args.items():
+                if v:
+                    longk=f"{Option.longPrefix}{k}"
+                    if longk in pr._cmd.longOpts:
+                        k=longk #优先使用长选项
+                    else:
+                        k=f"{Option.shortPrefix}{k}"
+                    pr._cons.append(k) 
+                    if isinstance(v,(list,tuple)):
+                        pr._cons+=[str(x) for x in v]
+                    elif isinstance(v,str):
+                        pr._cons.append(v)
+                    elif not v is True:
+                        pr._cons.append(str(v))
+            pr.raw=" ".join(pr._cons)
+        return pr
 
 if __name__=="__main__":
     cp=CommandParser()

@@ -140,3 +140,34 @@ def test_sync():
         pr=cp.tryParse(".mix")
         assert actual==["a","a","a","s","s"]
         assert pr.output==["a","s","a","a","s"]
+
+async def execute_main():
+    with CommandCore("main"):
+        cp=CommandParser()
+        Command("cmd").opt("-s",OPT.M).opt("-t",OPT.T).opt("-f",OPT.N)
+
+        @Events.onCmd("cmd")
+        async def cmdExecute(pr:ParseResult):
+            assert pr["s"]
+            assert pr["t"]
+            if pr.data.get("exe"):
+                return "from execute"
+            return "from parse"
+        pr=await cp.asyncTryParse(".cmd -s mile -t ea QwQ QwQ")
+        assert pr["t"]=="ea"
+        assert pr.paramStr=="QwQ QwQ"
+        assert pr.output==["from parse"]
+        assert not pr["f"]
+        assert isinstance(pr.raw,str)
+
+        pr=ParseResult.fromCmd(cp,"cmd",params=["QAQ","QAQ"],args={"s":"our","t":True,"f":True},
+            type="!",raw=None)
+        pr.data["exe"]=True
+        pr=await pr.asyncExecute()
+        assert pr["t"]==True
+        assert pr.paramStr=="QAQ QAQ"
+        assert pr.output==["from execute"]
+        assert pr["f"]
+
+def test_execute():
+    asyncio.run(execute_main())

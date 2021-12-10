@@ -125,7 +125,7 @@ class CommandCore:
         if not self.isRefreshed:
             self.refresh()
 
-    def isMatchPrefix(self,text):
+    def isMatchPrefix(self,text:str):
         """
             判断文本是否和前缀列表中的前缀匹配\n
                 text 文本\n

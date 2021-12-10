@@ -7,9 +7,10 @@ from . import CommandCore,BaseCommand,Command,Option,OPT,OptType
 from ..event import EventNames
 
 from enum import IntEnum
+from itertools import takewhile
 
 import asyncio
-import typing
+from typing import Union,Dict,Iterable,Any
 
 class CommandState(IntEnum):
     Unknown=-1          #未解析
@@ -26,8 +27,8 @@ class ParseResult:
     CommandState=CommandState
 
     @staticmethod
-    def fromCmd(parser:"CommandParser",command:typing.Union[str,Command],
-        params:list=(),args:typing.Dict[str,typing.Any]=None,
+    def fromCmd(parser:"CommandParser",command:Union[str,Command],
+        params:list=(),args:Dict[str,Any]=None,
         type:str=None,raw=None):
         """
             从指令、参数、选项等反向构建解析结果对象\n
@@ -160,7 +161,10 @@ class ParseResult:
         """
             得到用" "连接的指令参数（params）
         """
-        return " ".join(self.params)
+        
+        if self.parser:
+            return self.parser._parserCore.token2str(self.params)
+        return " ".join(map(str,self.params))
 
     @property
     def realCommand(self):
@@ -251,11 +255,140 @@ class ParseResult:
         parser=self._checkParser()
         return await parser.asyncExecute(self)
 
+class ParserCore:
+
+    @staticmethod
+    def getHeadStr(t:str,parser:"CommandParser"):
+        """ 判断字符串是否为指令，得到指令头部 """
+        return parser.core.isMatchPrefix(t) and t
+
+    @classmethod
+    def getHeadIter(cls,t:Iterable,parser:"CommandParser"):
+        """ 判断可迭代对象是否为指令，得到指令头部 """
+        if not t:
+            return False
+        head=str(t[0])
+        return cls.getHeadStr(head,parser)
+
+    @staticmethod
+    def tokenizeStr(t:str):
+        """ 切分字符串 """
+        firstLine=True
+        for line in t.strip().splitlines():
+            if firstLine:
+                firstLine=False
+            else:
+                yield "\n"
+            yield from line.split()
+
+    @staticmethod
+    def tokenizeIter(t:Iterable):
+        """ 切分可迭代对象 """
+        yield from t
+
+    @staticmethod
+    def cons2command(pr:ParseResult):
+        """ 从切分结果中得到指令类型与指令名 """
+        pr.type=pr._cons[0][0]
+        pr.command=pr._cons[0][1:]
+        if pr.command:
+            pr.state=CommandState.Command
+        return pr
+
+    @classmethod
+    def getCommandStr(cls,t:str,pr:ParseResult,parser:"CommandParser"):
+        """ t 为字符串时的 getCommand 流程 """
+        head=cls.getHeadStr(t,parser)
+        if head:
+            pr._cons=[*cls.tokenizeStr(t)]
+            pr=cls.cons2command(pr)
+        return pr
+
+    @classmethod
+    def getCommandIter(cls,t:Iterable,pr:ParseResult,parser:"CommandParser"):
+        """ t 为可迭代对象时的 getCommand 流程 """
+        head=cls.getHeadIter(t,parser)
+        if head:
+            pr._cons=[*cls.tokenizeIter(t)]
+            pr=cls.cons2command(pr)
+        return pr
+
+    @classmethod
+    def getCommand(cls,t,pr:ParseResult,parser:"CommandParser"):
+        """ 总体 getCommand 流程 """
+        if isinstance(t,str):
+            pr=cls.getCommandStr(t,pr,parser)
+        elif isinstance(t,Iterable):
+            pr=cls.getCommandIter(t,pr,parser)
+        else:
+            pr=cls.getCommandStr(str(t),pr,parser)
+        return pr
+
+    @classmethod
+    def command2obj(cls,pr:ParseResult,parser:"CommandParser"):
+        """ 为 pr 匹配 Command 对象 """
+        cmd:BaseCommand=parser.core.cmds.get(pr.command)
+        if cmd: #定义的指令
+            pr._cmd=cmd
+            pr.state=CommandState.DefinedCommand
+            if not pr.type in cmd.typelist:
+                pr.state=CommandState.WrongType
+        else: #未定义指令，给它一个临时的模板
+            pr._cmd=BaseCommand(pr._cons[0],coreName=parser.core.name)
+        return pr
+
+    @staticmethod
+    def getLong(con,hasValue):
+        """ 解析得到一个长选项 """
+        arg=con[0]
+        con=con[1:]
+        if hasValue!=OPT.Not:
+            val=[]
+            while con and Option.getOptType(con[0])==OptType.Not:
+                val.append(con[0])
+                con=con[1:]
+            if hasValue==OPT.Try and len(val)==0:
+                val=True
+        else:
+            val=True
+        return arg,val,con
+
+    @staticmethod
+    def getShort(con,hasValue):
+        """ 解析得到一个短选项 """
+        arg=con[0]
+        con=con[1:]
+        if hasValue==OPT.Not or (not con) or (hasValue==OPT.Try and Option.getOptType(con[0])!=OptType.Not ):
+            val=True
+        else:
+            val=con[0]
+            con=con[1:]
+        return arg,val,con
+
+    @staticmethod
+    def token2str(con:list):
+        """ 将切分的结果拼接回字符串 """
+        lines=[]
+        current=[]
+        for s in con:
+            s=str(s)
+            if s=="\n" and current:
+                lines.append(" ".join(current))
+                current=[]
+            else:
+                current.append(s)
+        if current:
+            lines.append(" ".join(current))
+        return "\n".join(lines)
+
 class CommandParser:
     '''
         指令解析类\n
         例: .cmd param1 param2 -s1 -s2 s2val --l lval1 lval2 lval3\n
     '''
+
+    _parserCore=ParserCore
+
     def __init__(self,coreName=None):
         """
             coreName 指令中枢名称，默认为 None，即最后创建的中枢\n
@@ -285,34 +418,40 @@ class CommandParser:
     def getCommand(self,t) -> ParseResult:
         """
             判断指定文本是否为指令，并更新当前解析状态\n
-                t 文本\n
+                t 文本或可以转换成文本的对象\n
         """
         result=ParseResult(parser=self)
         result.raw=t
-        if not isinstance(t,str):
-            t=str(t)
-        if t=="":
-            result.state=CommandState.NotCommand
-            self.result=result
-            return result
-        if self.core.isMatchPrefix(t): #至少被识别为一个指令
-            result._cons=t.strip().split()
-            result.type=result._cons[0][0]
-            result.command=result._cons[0][1:]
-            if result.command=="": #不允许空指令
-                result.state=CommandState.NotCommand
-                self.result=result
-                return result
-            result.state=CommandState.Command
-            cmd:BaseCommand=self.core.cmds.get(result.command)
+        result=self._parserCore.getCommand(t,result,self)
+        # if not isinstance(t,str):
+        #     t=str(t)
+        # if t=="":
+        #     result.state=CommandState.NotCommand
+        #     self.result=result
+        #     return result
+        # if t and self.core.isMatchPrefix(t): #至少被识别为一个指令
+        if result.isCommand():
+            # result._cons=t.strip().split()
+            # for line in t.strip().splitlines():
+            #     result._cons+=line.split()+["\n"]
+            # result._cons=result._cons[:-1] # 除去最后的 \n
+            # result.type=result._cons[0][0]
+            # result.command=result._cons[0][1:]
+            # if result.command=="": #不允许空指令
+            #     result.state=CommandState.NotCommand
+            #     self.result=result
+            #     return result
+            # result.state=CommandState.Command
+            result=self._parserCore.command2obj(result,self)
+            # cmd:BaseCommand=self.core.cmds.get(result.command)
             
-            if cmd: #定义的指令
-                result._cmd=cmd
-                result.state=CommandState.DefinedCommand
-                if not result.type in cmd.typelist:
-                    result.state=CommandState.WrongType
-            else: #未定义指令，给它一个临时的模板
-                result._cmd=BaseCommand(result._cons[0],coreName=self.core.name)
+            # if cmd: #定义的指令
+            #     result._cmd=cmd
+            #     result.state=CommandState.DefinedCommand
+            #     if not result.type in cmd.typelist:
+            #         result.state=CommandState.WrongType
+            # else: #未定义指令，给它一个临时的模板
+            #     result._cmd=BaseCommand(result._cons[0],coreName=self.core.name)
         else: #不是一个指令
             result.state=CommandState.NotCommand
         self.result=result
@@ -343,48 +482,50 @@ class CommandParser:
                     if tarOpt:
                         matched=True
                         optText=tarOpt.name
-                        _,pr.args[optText],con=self.getLong(con,tarOpt.hasValue)
+                        # _,pr.args[optText],con=self.getLong(con,tarOpt.hasValue)
+                        _,pr.args[optText],con=self._parserCore.getLong(con,tarOpt.hasValue)
                 else: #OptType.Short
                     tarOpt:Option=pr._cmd.shortOpts.get(con[0])
                     if tarOpt:
                         matched=True
                         optText=tarOpt.name
-                        _,pr.args[optText],con=self.getShort(con,tarOpt.hasValue)
+                        # _,pr.args[optText],con=self.getShort(con,tarOpt.hasValue)
+                        _,pr.args[optText],con=self._parserCore.getShort(con,tarOpt.hasValue)
                 if not matched:
                     pr.params.append(con[0])
                     con=con[1:]
         self.result=pr
         return pr
 
-    def getLong(self,con,hasValue):
-        """
-            解析中得到一个长选项
-        """
-        arg=con[0]
-        con=con[1:]
-        if hasValue!=OPT.Not:
-            val=[]
-            while con and Option.getOptType(con[0])==OptType.Not:
-                val.append(con[0])
-                con=con[1:]
-            if hasValue==OPT.Try and len(val)==0:
-                val=True
-        else:
-            val=True
-        return arg,val,con
+    # def getLong(self,con,hasValue):
+    #     """
+    #         解析中得到一个长选项
+    #     """
+    #     arg=con[0]
+    #     con=con[1:]
+    #     if hasValue!=OPT.Not:
+    #         val=[]
+    #         while con and Option.getOptType(con[0])==OptType.Not:
+    #             val.append(con[0])
+    #             con=con[1:]
+    #         if hasValue==OPT.Try and len(val)==0:
+    #             val=True
+    #     else:
+    #         val=True
+    #     return arg,val,con
 
-    def getShort(self,con,hasValue):
-        """
-            解析中得到一个短选项
-        """
-        arg=con[0]
-        con=con[1:]
-        if hasValue==OPT.Not or (not con) or (hasValue==OPT.Try and Option.getOptType(con[0])!=OptType.Not ):
-            val=True
-        else:
-            val=con[0]
-            con=con[1:]
-        return arg,val,con
+    # def getShort(self,con,hasValue):
+    #     """
+    #         解析中得到一个短选项
+    #     """
+    #     arg=con[0]
+    #     con=con[1:]
+    #     if hasValue==OPT.Not or (not con) or (hasValue==OPT.Try and Option.getOptType(con[0])!=OptType.Not ):
+    #         val=True
+    #     else:
+    #         val=con[0]
+    #         con=con[1:]
+    #     return arg,val,con
 
     def recheckCmd(self,pr:ParseResult):
         """
@@ -483,8 +624,8 @@ class CommandParser:
         await self.core.EM.asyncSend(EventNames.AfterParse,pr,self)
         return pr
 
-    def buildResult(self,command:typing.Union[str,Command],
-        params:list=(),args:typing.Dict[str,typing.Any]=None,
+    def buildResult(self,command:Union[str,Command],
+        params:list=(),args:Dict[str,Any]=None,
         type:str=None,raw=None):
         """
             从指令、参数、选项等反向构建解析结果对象

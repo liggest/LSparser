@@ -2,7 +2,6 @@
     创建指令模板
 """
 
-from os import terminal_size
 from . import CommandCore
 from ..event import CommandEvents
 from ..util.str import indent

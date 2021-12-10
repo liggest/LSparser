@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0,os.getcwd())
 
-from LSparser.command import CommandCore,OPT,Option,CommandHelper,OptType
+from LSparser.command import CommandCore,OPT,Option,CommandHelper,OptType,ParserCore
 from LSparser import Events,Command,CommandParser,ParseResult
 
 def teardown_function():
@@ -210,6 +210,16 @@ def test_parse():
         cp=CommandParser()
         Command("cmd")
         assert cp.tryParse(".cmd M W WmW").params == ["M","W","WmW"]
+        assert cp.tryParse("""
+            .cmd M W
+            WmW
+            MwM wMw mWm
+        """).params == ["M","W","\n","WmW","\n","MwM","wMw","mWm"]
+        assert cp.tryParse("""
+            .cmd M W
+            WmW
+            MwM wMw mWm
+        """).paramStr=="M W\nWmW\nMwM wMw mWm"
         assert cp.tryParse(".cmd -r -s W --t").paramStr == "-r -s W --t"
         Command("shortN").opt("-s",OPT.Not)
         assert not cp.tryParse(".shortN").args
@@ -466,3 +476,42 @@ def test_execute():
         assert pr.raw=="!cmd Cost tosC -s our -t A Z --c 386 <> True"
         assert pr.type=="!"
 
+
+def test_iter():
+    with CommandCore("main"):
+        cp=CommandParser()
+        Command("cmd").opt("-s1",OPT.N).opt("-s2",OPT.M).opt("--l",OPT.M)
+        
+        cmdList=[".cmd","p1","p2 p3","-s1","-s2","sval","--l","lval1","lval2"]
+        pr=cp.tryParse(cmdList)
+        assert pr.params==["p1","p2 p3"]
+        assert pr["s1"]
+        assert pr["s2"]=="sval"
+        assert pr["l"]==["lval1","lval2"]
+
+class CustomParserCore(ParserCore):
+
+    @staticmethod
+    def tokenizeStr(t: str):
+        current=""
+        for c in t:
+            if c==" " or c=="\n":
+                continue
+            current+=c
+            if len(current)==2:
+                yield current
+                current=""
+        if current:
+            yield current
+
+def test_custom():
+    with CommandCore("main"):
+        cp=CommandParser()
+        cp._parserCore=CustomParserCore
+        Command("c").names("c-").opt("-s",OPT.N).opt("-t",OPT.Try)
+        pr=cp.tryParse(".c-s-tahefg")
+        assert pr.type=="."
+        assert pr.command=="c"
+        assert pr["s"]
+        assert pr["t"]=="ah"
+        assert pr.params==["ef","g"]

@@ -20,9 +20,13 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
         exclude:  # do not test on these settings
           - os: macos-latest
-            python-version: ["3.9", "3.11"]
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.11"
           - os: windows-latest
-            python-version: ["3.9", "3.11"]
+            python-version: "3.9"
+          - os: windows-latest
+            python-version: "3.11"
 
     steps:
     - uses: actions/checkout@v3

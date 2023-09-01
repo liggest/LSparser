@@ -1,0 +1,22 @@
+name: Publish Python Package
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  pypi-publish:
+    name: upload release to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python with PDM
+      - uses: pdm-project/setup-pdm@v3
+        with:
+          python-version: '3.x'
+
+      - name: Publish package distributions to PyPI
+        run: pdm publish
